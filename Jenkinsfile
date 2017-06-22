@@ -58,7 +58,7 @@ def testWindowsNoDocker = {
 
 options = new TestAndPublishOptions()
 options.enable([StagesEnum.PACK_RELEASE_DEPS, StagesEnum.PACK_RELEASE_ST_DEPS])
-options.enable([StagesEnum.PACK_RELEASE_DEPS, StagesEnum.PACK_RELEASE_ST_DEPS])
+options.skip([StagesEnum.TEST])
 options.setPublishableBranches(['migrations-test']) //REMOVE IT BEFORE MERGE
 options.setPostfixes([master: 'migrations-test']) //REMOVE IT BEFORE MERGE
 testAndPublish(name, [ubuntu: testUbuntu], true, options)
