@@ -1,25 +1,20 @@
-from collections import deque
-from copy import deepcopy
-from hashlib import sha256
 from typing import Iterable, Any, List
 
 from ledger.compact_merkle_tree import CompactMerkleTree
 from ledger.serializers.compact_serializer import CompactSerializer
 from ledger.serializers.json_serializer import JsonSerializer
 from ledger.stores.file_hash_store import FileHashStore
-from orderedset._orderedset import OrderedSet
 from state.pruning_state import PruningState
 
 from plenum.common.constants import VERSION, \
     POOL_TXN_TYPES, NODE_PRIMARY_STORAGE_SUFFIX, \
-    HASH, ENC, RAW, DOMAIN_LEDGER_ID, POOL_LEDGER_ID, LedgerState
+    ENC, RAW, DOMAIN_LEDGER_ID, POOL_LEDGER_ID, LedgerState
 from plenum.common.exceptions import InvalidClientRequest
 from plenum.common.ledger import Ledger
-from plenum.common.types import Reply, RequestAck, f, \
-    OPERATION, LedgerStatus
-from plenum.common.util import error
+from plenum.common.types import f, \
+    OPERATION
+from plenum.common.messages.node_messages import Reply
 from plenum.persistence.storage import initStorage, initKeyValueStorage
-from plenum.persistence.util import txnsWithMerkleInfo
 from plenum.server.node import Node as PlenumNode
 from sovrin_common.config_util import getConfig
 from sovrin_common.constants import TXN_TYPE, allOpKeys, ATTRIB, GET_ATTR, \
@@ -281,7 +276,7 @@ class Node(PlenumNode, HasPoolManager):
         if all(attr in msg.keys()
                for attr in [OPERATION, f.IDENTIFIER.nm, f.REQ_ID.nm]) \
                 and msg.get(OPERATION, {}).get(TXN_TYPE) == NODE_UPGRADE:
-            cls = Request
+            cls = self._client_request_class
             cMsg = cls(**msg)
             return cMsg, frm
         else:
@@ -351,28 +346,29 @@ class Node(PlenumNode, HasPoolManager):
 
     def processRequest(self, request: Request, frm: str):
         if request.operation[TXN_TYPE] == GET_NYM:
-            self.transmitToClient(RequestAck(*request.key), frm)
+            self.send_ack_to_client(request.key, frm)
             result = self.reqHandler.handleGetNymReq(request, frm)
             self.transmitToClient(Reply(result), frm)
-        # TODO: Come back to it
-        elif request.operation[TXN_TYPE] == GET_TXNS:
-            # self.processGetTxnReq(request, frm)
-            return
         elif request.operation[TXN_TYPE] == GET_SCHEMA:
-            self.transmitToClient(RequestAck(*request.key), frm)
+            self.send_ack_to_client(request.key, frm)
+            # TODO: `handleGetSchemaReq` should be changed to
+            # `get_reply_for_schema_req`, the rationale being that the method
+            # is not completely handling the request but fetching a response.
+            # Similar reasoning follows for other methods below
             result = self.reqHandler.handleGetSchemaReq(request, frm)
             self.transmitToClient(Reply(result), frm)
         elif request.operation[TXN_TYPE] == GET_ATTR:
-            self.transmitToClient(RequestAck(*request.key), frm)
+            self.send_ack_to_client(request.key, frm)
             result = self.reqHandler.handleGetAttrsReq(request, frm)
             self.transmitToClient(Reply(result), frm)
         elif request.operation[TXN_TYPE] == GET_CLAIM_DEF:
-            self.transmitToClient(RequestAck(*request.key), frm)
+            self.send_ack_to_client(request.key, frm)
             result = self.reqHandler.handleGetClaimDefReq(request, frm)
             self.transmitToClient(Reply(result), frm)
         else:
             # forced request should be processed before consensus
             if request.operation[TXN_TYPE] == POOL_UPGRADE and request.isForced():
+                self.configReqHandler.validate(request)
                 self.configReqHandler.applyForced(request)
             super().processRequest(request, frm)
 
@@ -386,14 +382,14 @@ class Node(PlenumNode, HasPoolManager):
         if txnType in CONFIG_TXN_TYPES:
             return CONFIG_LEDGER_ID
 
-    def applyReq(self, request: Request):
+    def applyReq(self, request: Request, cons_time):
         """
         Apply request to appropriate ledger and state
         """
         if self.__class__.ledgerIdForRequest(request) == CONFIG_LEDGER_ID:
-            return self.configReqHandler.apply(request)
+            return self.configReqHandler.apply(request, cons_time)
         else:
-            return super().applyReq(request)
+            return super().applyReq(request, cons_time)
 
     def executeDomainTxns(self, ppTime, reqs: List[Request], stateRoot,
                           txnRoot) -> List:
@@ -401,7 +397,7 @@ class Node(PlenumNode, HasPoolManager):
         Execute the REQUEST sent to this Node
 
         :param ppTime: the time at which PRE-PREPARE was sent
-        :param req: the client REQUEST
+        :param req: the client REQUEST  
         """
         return self.commitAndSendReplies(self.reqHandler, ppTime, reqs,
                                          stateRoot, txnRoot)

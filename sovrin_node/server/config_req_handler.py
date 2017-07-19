@@ -64,6 +64,13 @@ class ConfigReqHandler(RequestHandler):
             status = self.upgrader.statusInLedger(req.operation.get(NAME),
                                                   req.operation.get(VERSION))
 
+            if status == START and action == START:
+                raise InvalidClientRequest(
+                    req.identifier,
+                    req.reqId,
+                    "Upgrade '{}' is already scheduled".format(
+                        req.operation.get(NAME)))
+
             r, msg = Authoriser.authorised(POOL_UPGRADE, ACTION, originRole,
                                            oldVal=status, newVal=action)
             if not r:
@@ -74,8 +81,8 @@ class ConfigReqHandler(RequestHandler):
                         Roles.nameFromValue(originRole),
                         SovrinTransactions.POOL_UPGRADE.name))
 
-    def apply(self, req: Request):
-        txn = reqToTxn(req)
+    def apply(self, req: Request, cons_time):
+        txn = reqToTxn(req, cons_time)
         self.ledger.appendTxns([txn])
         return txn
 
