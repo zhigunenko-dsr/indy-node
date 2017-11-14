@@ -2,6 +2,9 @@ from copy import deepcopy
 from typing import List
 
 import base58
+
+from indy_common.state.domain import make_state_path_for_attr, parse_attr_txn, make_state_path_for_claim_def, \
+    make_state_path_for_schema
 from plenum.common.constants import TXN_TYPE, TARGET_NYM, RAW, ENC, HASH, \
     VERKEY, DATA, NAME, VERSION, ORIGIN, \
     TXN_TIME
@@ -219,7 +222,7 @@ class DomainReqHandler(PHandler):
             update_time = None
 
         # TODO: add update time here!
-        result = self.make_result(request=request,
+        result = self.make_read_result(request=request,
                                   data=data,
                                   last_seq_no=seq_no,
                                   update_time=update_time,
@@ -235,7 +238,7 @@ class DomainReqHandler(PHandler):
             schemaName=(request.operation[DATA][NAME]),
             schemaVersion=(request.operation[DATA][VERSION])
         )
-        return self.make_result(request=request,
+        return self.make_read_result(request=request,
                                 data=schema,
                                 last_seq_no=lastSeqNo,
                                 update_time=lastUpdateTime,
@@ -248,7 +251,7 @@ class DomainReqHandler(PHandler):
             schemaSeqNo=request.operation[REF],
             signatureType=signatureType
         )
-        result = self.make_result(request=request,
+        result = self.make_read_result(request=request,
                                   data=keys,
                                   last_seq_no=lastSeqNo,
                                   update_time=lastUpdateTime,
@@ -278,7 +281,7 @@ class DomainReqHandler(PHandler):
                 attr = attr_key
             else:
                 attr = value
-        return self.make_result(request=request,
+        return self.make_read_result(request=request,
                                 data=attr,
                                 last_seq_no=lastSeqNo,
                                 update_time=lastUpdateTime,
@@ -410,3 +413,23 @@ class DomainReqHandler(PHandler):
         elif HASH in txn:
             txn[HASH] = txn[HASH]
         return txn
+
+    def get_path_for_txn(self, txn):
+        typ = txn.get(TXN_TYPE)
+        if typ == ATTRIB:
+            nym = txn[TARGET_NYM]
+            attr_key, value = parse_attr_txn(txn)
+            return make_state_path_for_attr(nym, attr_key)
+        elif typ == SCHEMA:
+            origin = txn.get(f.IDENTIFIER.nm)
+            data = txn.get(DATA)
+            schema_name = data.pop(NAME)
+            schema_version = data.pop(VERSION)
+            return make_state_path_for_schema(origin, schema_name, schema_version)
+        elif typ == CLAIM_DEF:
+            origin = txn.get(f.IDENTIFIER.nm)
+            schema_seq_no = txn.get(REF)
+            signature_type = txn.get(SIGNATURE_TYPE, 'CL')
+            return make_state_path_for_claim_def(origin, schema_seq_no, signature_type)
+        else:
+            super().get_path_for_txn(txn)

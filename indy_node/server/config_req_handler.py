@@ -18,7 +18,7 @@ from indy_node.server.pool_config import PoolConfig
 class ConfigReqHandler(RequestHandler):
     def __init__(self, ledger, state, idrCache: IdrCache,
                  upgrader: Upgrader, poolManager, poolCfg: PoolConfig):
-        super().__init__(ledger, state)
+        super().__init__(ledger, state, None)
         self.idrCache = idrCache
         self.upgrader = upgrader
         self.poolManager = poolManager
@@ -50,7 +50,7 @@ class ConfigReqHandler(RequestHandler):
                                            "{} not a valid schedule since {}".
                                            format(schedule, msg))
 
-        # TODO: Check if cancel is submitted before start
+                # TODO: Check if cancel is submitted before start
 
     def validate(self, req: Request, config=None):
         status = None
@@ -130,3 +130,6 @@ class ConfigReqHandler(RequestHandler):
             txn = reqToTxn(req)
             self.upgrader.handleUpgradeTxn(txn)
             self.poolCfg.handleConfigTxn(txn)
+
+    def get_path_for_txn(self, txn):
+        return None
